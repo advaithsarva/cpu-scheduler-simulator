@@ -1,0 +1,10 @@
+{
+  "_comment": "The worked example from the Silberschatz scheduling chapter. FCFS gives an average wait of 8.75 here; SRTF gives 6.5.",
+  "quantum": 4,
+  "processes": [
+    {"pid": "P1", "arrival": 0, "burst": 8, "priority": 3},
+    {"pid": "P2", "arrival": 1, "burst": 4, "priority": 1},
+    {"pid": "P3", "arrival": 2, "burst": 9, "priority": 4},
+    {"pid": "P4", "arrival": 3, "burst": 5, "priority": 2}
+  ]
+}

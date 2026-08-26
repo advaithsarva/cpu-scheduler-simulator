@@ -1,0 +1,9 @@
+{
+  "_comment": "Nothing arrives until t=5 and there is a hole between t=9 and t=20. Exercises the idle path: the CPU must wait rather than starting work early, and utilisation must come out below 100%.",
+  "quantum": 4,
+  "processes": [
+    {"pid": "A", "arrival": 5,  "burst": 4, "priority": 1},
+    {"pid": "B", "arrival": 20, "burst": 3, "priority": 2},
+    {"pid": "C", "arrival": 21, "burst": 2, "priority": 1}
+  ]
+}

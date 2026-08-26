@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPU Scheduler Gantt Viewer</title>
+<style>
+  :root { --bg:#fbfbfa; --fg:#1a1a19; --line:#d8d6d1; --muted:#6b6862; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#191918; --fg:#eeece7; --line:#38352f; --muted:#9a968d; }
+  }
+  body { margin:0; padding:2rem 1.5rem; background:var(--bg); color:var(--fg);
+         font:15px/1.55 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  main { max-width:60rem; margin:0 auto; }
+  h1 { font-size:1.35rem; margin:0 0 .25rem; }
+  p.sub { color:var(--muted); margin:0 0 1.5rem; }
+  textarea { width:100%; height:9rem; box-sizing:border-box; padding:.7rem;
+             font:13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+             background:transparent; color:var(--fg);
+             border:1px solid var(--line); border-radius:6px; }
+  button { margin:.7rem 0 1.5rem; padding:.45rem 1rem; font:inherit; cursor:pointer;
+           background:var(--fg); color:var(--bg); border:0; border-radius:6px; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; margin-top:1.5rem; font-size:14px; }
+  th, td { padding:.35rem .8rem; text-align:right; border-bottom:1px solid var(--line); }
+  th:first-child, td:first-child { text-align:left; }
+  .err { color:#c0392b; font-family:ui-monospace, monospace; font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>CPU Scheduler Gantt Viewer</h1>
+  <p class="sub">Paste the output of <code>python cli.py workload.json --algo rr --json</code>.</p>
+
+  <textarea id="src" spellcheck="false"></textarea>
+  <button id="draw">Draw</button>
+  <div class="err" id="err"></div>
+  <div class="scroll"><svg id="chart" height="0"></svg></div>
+  <div class="scroll"><table id="stats"></table></div>
+</main>
+
+<script>
+// Deliberately no build step and no dependencies: this file opens from disk.
+// It renders what the CLI already computed and never schedules anything
+// itself -- two implementations of the same algorithm would drift apart, and
+// the Python one is the tested one.
+const PALETTE = ['#4f7cac','#c05746','#5b8c5a','#b3843a','#7b6ea8',
+                 '#3f8f8b','#a4574f','#6d8f3a','#8a6ca8','#4a7a9c'];
+
+const SVG = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs, text) => {
+  const n = document.createElementNS(SVG, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+
+function draw(payload) {
+  const chart = document.getElementById('chart');
+  const stats = document.getElementById('stats');
+  chart.replaceChildren();
+  stats.replaceChildren();
+
+  const timeline = payload.timeline;
+  if (!Array.isArray(timeline) || !timeline.length) {
+    throw new Error('no "timeline" in that JSON -- run the CLI with --algo, not --recommend');
+  }
+
+  const pids = [...new Set(timeline.map(s => s.pid))];
+  const colour = Object.fromEntries(pids.map((p, i) => [p, PALETTE[i % PALETTE.length]]));
+  const span = Math.max(...timeline.map(s => s.end));
+
+  const PAD = 40, W = Math.max(640, span * 22), H = 90;
+  const x = t => PAD + (t / span) * (W - PAD * 2);
+
+  chart.setAttribute('width', W);
+  chart.setAttribute('height', H + pids.length * 22 + 30);
+
+  // idle background, so gaps read as "the CPU had nothing to do"
+  chart.append(el('rect', {x: x(0), y: 24, width: x(span) - x(0), height: 34,
+                           fill: 'none', stroke: 'currentColor', 'stroke-dasharray': '3 3',
+                           opacity: .35}));
+
+  for (const s of timeline) {
+    const w = Math.max(1, x(s.end) - x(s.start));
+    chart.append(el('rect', {x: x(s.start), y: 24, width: w, height: 34,
+                             fill: colour[s.pid], rx: 2}));
+    if (w > 26) {
+      chart.append(el('text', {x: x(s.start) + w / 2, y: 46, 'text-anchor': 'middle',
+                               fill: '#fff', 'font-size': 12}, s.pid));
+    }
+    chart.append(el('text', {x: x(s.start), y: 74, 'text-anchor': 'middle',
+                             fill: 'currentColor', 'font-size': 11, opacity: .7}, s.start));
+  }
+  chart.append(el('text', {x: x(span), y: 74, 'text-anchor': 'middle',
+                           fill: 'currentColor', 'font-size': 11, opacity: .7}, span));
+
+  pids.forEach((p, i) => {
+    chart.append(el('rect', {x: PAD, y: H + i * 22 - 8, width: 11, height: 11, fill: colour[p], rx: 2}));
+    chart.append(el('text', {x: PAD + 18, y: H + i * 22 + 2, fill: 'currentColor', 'font-size': 13}, p));
+  });
+
+  const head = ['pid', 'arrival', 'burst', 'completion', 'turnaround', 'waiting', 'response'];
+  const thead = document.createElement('tr');
+  head.forEach(h => { const th = document.createElement('th'); th.textContent = h; thead.append(th); });
+  stats.append(thead);
+  for (const row of payload.per_process || []) {
+    const tr = document.createElement('tr');
+    head.forEach(h => { const td = document.createElement('td'); td.textContent = row[h]; tr.append(td); });
+    stats.append(tr);
+  }
+  if (payload.avg_waiting !== undefined) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="7" style="text-align:left;padding-top:.7rem">` +
+      `avg wait <b>${payload.avg_waiting}</b> &middot; avg turnaround <b>${payload.avg_turnaround}</b> ` +
+      `&middot; avg response <b>${payload.avg_response}</b> &middot; ` +
+      `cpu <b>${(payload.cpu_utilization * 100).toFixed(1)}%</b> &middot; ` +
+      `switches <b>${payload.context_switches}</b></td>`;
+    stats.append(tr);
+  }
+}
+
+document.getElementById('draw').addEventListener('click', () => {
+  const err = document.getElementById('err');
+  err.textContent = '';
+  try {
+    draw(JSON.parse(document.getElementById('src').value));
+  } catch (e) {
+    err.textContent = e.message;
+  }
+});
+
+document.getElementById('src').value = JSON.stringify({
+  algorithm: 'rr', quantum: 2,
+  timeline: [
+    {pid: 'batch', start: 0, end: 2}, {pid: 'edit-1', start: 2, end: 4},
+    {pid: 'batch', start: 4, end: 6}, {pid: 'edit-2', start: 6, end: 7},
+    {pid: 'batch', start: 7, end: 9}, {pid: 'edit-3', start: 9, end: 11},
+    {pid: 'batch', start: 11, end: 13}, {pid: 'edit-4', start: 13, end: 15}
+  ],
+  per_process: [], avg_waiting: 0, avg_turnaround: 0, avg_response: 0,
+  cpu_utilization: 1, context_switches: 7
+}, null, 1);
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "_comment": "One long batch job among short interactive ones. This is the shape where the algorithm choice matters most: FCFS makes every short job queue behind the 28-unit job.",
+  "quantum": 2,
+  "processes": [
+    {"pid": "batch",  "arrival": 0,  "burst": 28, "priority": 5},
+    {"pid": "edit-1", "arrival": 1,  "burst": 2,  "priority": 1},
+    {"pid": "edit-2", "arrival": 3,  "burst": 1,  "priority": 1},
+    {"pid": "edit-3", "arrival": 5,  "burst": 3,  "priority": 1},
+    {"pid": "edit-4", "arrival": 9,  "burst": 2,  "priority": 1},
+    {"pid": "sync",   "arrival": 12, "burst": 6,  "priority": 3}
+  ]
+}
