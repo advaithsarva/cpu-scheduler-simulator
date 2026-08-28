@@ -1,35 +1,22 @@
 # CPU Scheduler Simulator
 
-Feed it a set of processes with arrival and burst times; it runs FCFS, SJF,
-SRTF, Round Robin and Priority scheduling over the same workload, draws the
-Gantt chart, and gives you the waiting, turnaround and response times side by
-side.
+Give it a set of processes with arrival and burst times, and it runs FCFS, SJF, SRTF, Round Robin, and Priority scheduling against the same workload. It then draws the Gantt chart and reports waiting, turnaround, and response times side by side.
 
-Pure Python standard library. No install step, no dependencies, no build.
+Pure Python standard library. No installation, dependencies, or build step.
 
-**Searching all five algorithms and four round-robin quanta cuts average
-waiting time 40.9–48.9% against the round-robin-with-quantum-4 default, over
-1500 seeded random workloads, and never once lost to it.** Full numbers and
-method in [RESULTS.md](RESULTS.md).
+**Searching all five algorithms and four Round Robin quanta reduces average waiting time by 40.9–48.9% compared with the round-robin-with-quantum-4 default, across 1,500 seeded random workloads, without losing to the default on any of them.** The full measurements and methodology are in `RESULTS.md`.
 
 ---
 
-## The rule the whole thing turns on
+## The rule the whole simulator depends on
 
-> **Every algorithm returns a timeline of `(pid, start, end)` slices in which
-> each process receives exactly `burst` units of CPU, no slice begins before
-> its process arrives, and no two slices overlap.**
+> **Every algorithm returns a timeline of `(pid, start, end)` slices where each process receives exactly its requested `burst` time, no slice starts before the process arrives, and no two slices overlap.**
 
-`validate_timeline()` in `scheduler.py` checks all four conditions, and every
-algorithm is run through it on two fixed workloads plus 200 seeded random
-ones. This is the invariant because it is the failure that makes a scheduler
-simulator worthless: a broken timeline still draws a plausible chart and still
-prints a plausible average. Nothing looks wrong. A preemptive algorithm that
-drops half a unit on each context switch produces a chart no human eye would
-question.
+`scheduler.py` uses `validate_timeline()` to check these conditions. Every algorithm is tested against two fixed workloads and 200 seeded random workloads.
 
-Time is integer throughout. That is a deliberate restriction — it makes the
-invariant exactly checkable rather than approximately checkable.
+This invariant matters because a broken scheduler can still produce a Gantt chart that looks completely reasonable and averages that look plausible. For example, a preemptive scheduler that accidentally loses half a unit during every context switch could still produce output that looks correct at a glance.
+
+Time is represented using integers throughout. That is deliberate: it makes the invariant exactly checkable rather than dependent on floating-point tolerances.
 
 ---
 
@@ -37,31 +24,33 @@ invariant exactly checkable rather than approximately checkable.
 
 Python 3.10 or newer. Nothing to install.
 
-```bash
+```bash id="e0oq7j"
 python cli.py workloads/classic.json                  # all five, side by side
-python cli.py workloads/bursty.json --algo rr -q 2    # one algorithm
+python cli.py workloads/bursty.json --algo rr -q 2   # one algorithm
 python cli.py workloads/bursty.json --recommend       # pick the best one
 python cli.py workloads/classic.json --algo srtf --json > plan.json
+
 cat workload.json | python cli.py -                   # or read stdin
 ```
 
-Output of the comparison run:
+A comparison run produces:
 
-```
+```text id="s5u7d1"
 === summary ===
 algorithm     avg wait  avg turn  avg resp  switches
+
 fcfs              8.75     15.25      8.75         3
 sjf               7.75     14.25      7.75         3
 srtf               6.5      13.0      4.25         4
-rr               11.75     18.25       4.5         7
-priority          7.75     14.25      7.75         3
+rr                11.75     18.25       4.5         7
+priority           7.75     14.25      7.75         3
 ```
 
 ### Workload format
 
-A JSON list, or an object with `processes` and an optional `quantum`:
+The input can be a JSON list or an object containing `processes` and an optional `quantum`:
 
-```json
+```json id="5y8d1m"
 {
   "quantum": 4,
   "processes": [
@@ -71,107 +60,115 @@ A JSON list, or an object with `processes` and an optional `quantum`:
 }
 ```
 
-`pid` defaults to `P1, P2, …` and `priority` to `0`. Lower priority number
-means more important, per the Unix convention. Three samples are in
-`workloads/`.
+`pid` defaults to `P1`, `P2`, and so on. `priority` defaults to `0`. Lower priority numbers mean higher priority, following the Unix convention.
+
+Three sample workloads are included in `workloads/`.
 
 ### The Gantt chart
 
-`cli.py` draws an ASCII chart in the terminal. For a proper one, open
-`viewer.html` in a browser and paste in the output of `--algo … --json`. It is
-a single file with no dependencies and no build step, and it only *renders* —
-it never schedules anything itself, because a second implementation of these
-algorithms would drift away from the tested one.
+`cli.py` prints an ASCII Gantt chart directly in the terminal.
+
+For a more visual version, open `viewer.html` in a browser and paste in the output from `--algo ... --json`. It is a single dependency-free HTML file with no build step.
+
+The viewer only renders the schedule. It does not implement any scheduling algorithms itself. Keeping scheduling in one place avoids having a second implementation slowly diverge from the tested one.
 
 ---
 
 ## Driving it from other software
 
-`--json` is the machine interface: one JSON document in on a path or stdin,
-one JSON document out on stdout, and nothing else on stdout when you use it.
-Exit code is 0 on success, 1 if scheduling failed, 2 if the workload could not
-be read.
+`--json` is the machine interface: one JSON document goes in from a file or stdin, and one JSON document comes out on stdout. When using this mode, nothing else is written to stdout.
 
-```bash
+Exit codes are:
+
+* `0` — scheduling succeeded
+* `1` — scheduling failed
+* `2` — the workload could not be read
+
+For example:
+
+```bash id="xj6e9s"
 echo '[{"arrival":0,"burst":5},{"arrival":1,"burst":2}]' | python cli.py - --recommend --json
 ```
 
-```json
+```json id="a2e7kr"
 {
   "metric": "avg_waiting",
   "choice": "srtf",
   "algorithm": "srtf",
   "quantum": null,
   "score": 1.0,
-  "considered": [ ... every candidate, so it shows its work ... ]
+  "considered": [
+    "... every candidate, so the decision can be inspected ..."
+  ]
 }
 ```
 
-That is this project's answer to "where is the intelligence?" — it is the tool,
-not the model. No credential, no network call, no latency, no accuracy claim
-that cannot be reproduced. `--recommend` searches the whole space of five
-algorithms and four quanta, which is cheap enough here (median 0.5–0.8 ms) that
-searching genuinely beats guessing, and `bench.py` measures by how much.
+This is where the decision-making lives. There is no model, credential, network request, or external service involved.
+
+`--recommend` simply searches the available scheduling choices: five algorithms plus Round Robin with four different quanta. For the workload sizes used here, that search is cheap enough to make simulation preferable to guessing. The median search takes roughly **0.5–0.8 ms**, and `bench.py` measures the resulting improvement.
 
 ---
 
 ## Tests
 
-```bash
+```bash id="z0n3qu"
 python test_scheduler.py     # 15/15, about 0.4 s
 ```
 
-Plain asserts, no pytest, no network. The suite is in two halves:
+The tests use plain assertions. There is no pytest, network access, or external test data.
 
-**The invariant**, checked against all five algorithms — including
-`test_invariant_catches_a_deliberately_broken_timeline`, which hands
-`validate_timeline` a timeline that short-changes every process and one that
-runs a process before it arrives, and fails if either is accepted. Without
-that test the other fourteen are decoration.
+The suite has two main parts.
 
-**The arithmetic**, one test per mistake that is easy to make:
+### The invariant
 
-| Test | What it catches |
-|---|---|
-| `fcfs matches the textbook numbers` | 8.75 average wait on the Silberschatz example — a figure from outside this repo |
-| `srtf actually preempts` | SRTF quietly degrading into non-preemptive SJF; P1 must be split in two |
-| `rr admits arrivals before the preempted` | the round-robin queue-ordering bug (below) |
-| `rr with a huge quantum is fcfs` | a quantum longer than every burst must preempt nothing |
-| `the cpu idles instead of time travelling` | starting work at t=0 when nothing arrives until t=5, handing out five free units |
-| `waiting time is never negative` | a process credited with more CPU than it asked for |
-| `response time is not turnaround time` | two different numbers, easily conflated |
-| `a bad workload raises instead of clamping` | zero burst, negative arrival, quantum 0, unknown algorithm |
-| `recommend never loses to the default` | the Phase 3.5 feature's one promise |
-| `output is deterministic` | ties broken by pid, not by set or dict order |
+The timeline invariant is checked against all five algorithms. One particularly important test is `test_invariant_catches_a_deliberately_broken_timeline`.
 
-### The one bug the invariant cannot catch
+It gives `validate_timeline()` two invalid schedules:
 
-In round robin, a process that arrives *during* a time slice must be put on
-the queue **before** the process that was just preempted goes back on it. Get
-that backwards and one process keeps stealing its own turn.
+1. One that short-changes every process.
+2. One that schedules a process before its arrival time.
 
-The resulting timeline is still completely valid — every process gets its
-exact burst, nothing overlaps, nothing runs early — so `validate_timeline`
-passes it without complaint. Only the fairness is wrong, and only
-`test_round_robin_enqueues_arrivals_before_the_preempted` sees it. It pins the
-exact slice order `A, B, A, B, A` for a workload built so that B arrives at
-precisely the tick A's first slice ends.
+The test fails if either invalid timeline is accepted. Without it, the other tests would depend on a checker that had never been shown to catch the errors it is supposed to detect.
 
-That test is here because an invariant, however good, only covers the
-properties you thought to state.
+### The arithmetic
+
+The remaining tests target individual scheduler mistakes:
+
+| Test                                        | What it catches                                                                                    |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `fcfs matches the textbook numbers`         | 8.75 average waiting time on the Silberschatz example, using a figure from outside this repository |
+| `srtf actually preempts`                    | SRTF accidentally behaving like non-preemptive SJF; P1 must be split into two slices               |
+| `rr admits arrivals before the preempted`   | The Round Robin queue-ordering bug described below                                                 |
+| `rr with a huge quantum is fcfs`            | A quantum longer than every burst should cause no preemption                                       |
+| `the cpu idles instead of time travelling`  | Starting execution at t=0 when the first process arrives at t=5                                    |
+| `waiting time is never negative`            | Giving a process more CPU time than its requested burst                                            |
+| `response time is not turnaround time`      | Accidentally treating the two metrics as the same value                                            |
+| `a bad workload raises instead of clamping` | Invalid burst/arrival values, quantum 0, and unknown algorithms                                    |
+| `recommend never loses to the default`      | The main guarantee of the recommendation feature                                                   |
+| `output is deterministic`                   | Ties must be resolved by PID rather than depending on set or dictionary ordering                   |
+
+### The bug the invariant cannot catch
+
+Round Robin has a subtle ordering rule that the timeline invariant cannot detect.
+
+If a new process arrives **during** the current time slice, it must enter the ready queue **before** the process that was just preempted is added back to the queue.
+
+If that ordering is reversed, a process can effectively take its own turn again before another process gets one.
+
+The resulting timeline can still be completely valid: every process gets its full burst, no slices overlap, and nothing runs before its arrival. `validate_timeline()` therefore has no reason to reject it.
+
+Only `test_round_robin_enqueues_arrivals_before_the_preempted` catches the fairness problem. It checks for the exact `A, B, A, B, A` slice order using a workload where B arrives exactly when A's first slice ends.
+
+This is a useful limitation of invariants in general: they can only verify properties that have actually been stated.
 
 ---
 
 ## What is not here
 
-- **No preemptive priority and no aging.** Non-preemptive priority is
-  implemented and starves low-priority work forever, which is honest and
-  visible in the output rather than hidden behind a half-built fix.
-- **No I/O bursts.** Every process is pure CPU. Adding I/O means a blocked
-  state and a second queue, which changes every algorithm.
-- **No multi-core.** One CPU. The timeline invariant assumes one runnable
-  slice at a time and would need rewriting for more.
-- **`srtf` steps one time unit at a time**, so it is O(total_burst × n). Fine
-  into the hundreds of processes and obviously correct, which matters more
-  here. Above roughly 10,000 time units, make it event-driven — and keep
-  `validate_timeline` as the proof the rewrite is equivalent.
+* **No preemptive priority scheduling and no aging.** Non-preemptive priority scheduling is implemented. It can starve lower-priority work, and that behavior remains visible rather than being hidden behind an incomplete aging implementation.
+
+* **No I/O bursts.** Every process is CPU-only. Adding I/O would introduce blocked processes and another queue, changing the behavior of all five algorithms.
+
+* **No multicore scheduling.** The simulator models one CPU. The current timeline invariant assumes that only one runnable slice exists at a time and would need to be changed for multiple cores.
+
+* **SRTF advances one time unit at a time.** Its complexity is `O(total_burst × n)`. That is acceptable for the simulator's intended workload sizes and keeps the implementation straightforward to verify. For workloads exceeding roughly 10,000 time units, an event-driven implementation would make more sense. `validate_timeline()` should remain in place as the check that the optimized implementation produces an equivalent schedule.
